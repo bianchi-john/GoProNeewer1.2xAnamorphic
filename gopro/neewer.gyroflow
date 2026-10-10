@@ -1,0 +1,5 @@
+{
+  "version": 2,
+  "calibration_file": "/home/john/gopro/neewer_lens.json",
+  "output": {"codec": "H.264/AVC", "bitrate": 100}
+}

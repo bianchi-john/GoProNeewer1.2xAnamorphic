@@ -1,0 +1,9 @@
+# I clip video di test sono grandi: li versioniamo con Git LFS.
+*.MP4 filter=lfs diff=lfs merge=lfs -text
+*.mp4 filter=lfs diff=lfs merge=lfs -text
+
+# Normalizzazione testo
+*.py text eol=lf
+*.md text eol=lf
+*.sh text eol=lf
+*.json text eol=lf

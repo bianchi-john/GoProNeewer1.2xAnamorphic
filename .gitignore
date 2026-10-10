@@ -1,0 +1,34 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+
+# --- Gyroflow / eseguibili esterni (NON vanno nel repo) ---
+gopro/Gyroflow.AppImage
+*.AppImage
+
+# --- Output della pipeline ---
+gopro/finali/
+gopro/finali_calibrato/
+gopro/**/.tmp_stabilizzati/
+**/.tmp_stabilizzati/
+*_stabilized.*
+*_anamorfico_*.mp4
+
+# --- Materiale di test NON pubblicato ---
+# I clip .MP4 di test sono inclusi via Git LFS (vedi .gitattributes).
+# File collaterali della GoPro non necessari:
+*.LRV
+*.THM
+gopro/**/*.LRV
+gopro/**/*.THM
+
+# --- Varie ---
+*.log
+.DS_Store
