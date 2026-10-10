@@ -2,7 +2,7 @@
 Type=Application
 Name=GoProAnamorphic
 GenericName=GoPro Anamorphic Toolkit
-Comment=Stabilizzazione (Gyroflow) + desqueeze anamorfico 1.2x + export H.265
+Comment=Gyroflow stabilization + 1.2x anamorphic desqueeze + full-resolution H.265 export
 Exec=gat
 Icon=GoProAnamorphic
 Categories=AudioVideo;Video;

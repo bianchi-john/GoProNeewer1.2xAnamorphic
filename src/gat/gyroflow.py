@@ -1,18 +1,18 @@
-"""Wrapper CLI per Gyroflow.
+"""Gyroflow CLI wrapper.
 
-Gyroflow viene usato come eseguibile esterno (AppImage) via CLI::
+Gyroflow is used as an external executable (AppImage) through its CLI::
 
     Gyroflow.AppImage <video> --preset <file.gyroflow> -f
 
-Il preset viene generato al volo con il percorso ASSOLUTO del profilo lente
-calibrato (così non si hardcoda nessun path utente). L'output è un file
-``<nome>_stabilized.mp4`` accanto all'input.
+The preset is generated on the fly with the ABSOLUTE path of the calibrated
+lens profile, so no user path is ever hard-coded. The output is a
+``<name>_stabilized.mp4`` file next to the input.
 
-Gestione del bug noto su hardware AMD: Gyroflow stampa ripetuti errori
+Known harmless bug on AMD hardware: Gyroflow repeatedly prints
 ``Failed to initialize OpenCL``, ``Cannot load libcuda.so.1`` /
-``libamfrt64.so.1``. NON sono fatali: Gyroflow ricade su ``wgpu`` e completa.
-Il successo si giudica dalla presenza del file ``_stabilized`` e dalla riga
-``Done in <t>s``, non dal contenuto di stderr.
+``libamfrt64.so.1`` (plus a Rust backtrace). These are NOT fatal: Gyroflow falls
+back to ``wgpu`` and finishes the render. Success is judged from the presence of
+the ``_stabilized`` file and the ``Done in <t>s`` line, never from stderr.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from . import config
 
 LogCallback = Callable[[str], None]
 
-# Pattern degli errori innocui da declassare a semplice info nel log.
+# Known harmless messages (GPU backend probing and the backtrace that follows).
 _BENIGN_PATTERNS = (
     re.compile(r"Failed to initialize OpenCL", re.I),
     re.compile(r"Cannot load libcuda", re.I),
@@ -40,18 +40,18 @@ _BENIGN_PATTERNS = (
     re.compile(r"clGetPlatformIDs", re.I),
     re.compile(r"Could not dynamically load CUDA", re.I),
     re.compile(r"DLL .* failed to open", re.I),
-    # Rumore del backtrace Rust che segue il panic OpenCL innocuo.
+    # Rust backtrace noise following the harmless OpenCL panic.
     re.compile(r"^\s*\d+:\s", re.I),
     re.compile(r"^\s*at \./", re.I),
-    re.compile(r"start_thread|__GI___clone|stack backtrace|note: run with", re.I),
+    re.compile(r"start_thread|__GI___clone|__libc_start|stack backtrace|note: run with", re.I),
 )
-# Righe che indicano l'esito reale.
+# Lines that tell the real outcome.
 _DONE_RE = re.compile(r"Done in ([\d.]+)\s*s", re.I)
 _WGPU_RE = re.compile(r"Initialized wgpu", re.I)
 
 
 class GyroflowError(RuntimeError):
-    """Gyroflow non trovato o rendering non andato a buon fine."""
+    """Gyroflow not found, or the render did not succeed."""
 
 
 @dataclass
@@ -62,22 +62,22 @@ class GyroflowResult:
 
 
 def is_benign(line: str) -> bool:
-    """True se la riga di log è uno degli errori innocui noti (OpenCL/CUDA/AMF)."""
+    """True when the log line is one of the known harmless messages."""
     return any(p.search(line) for p in _BENIGN_PATTERNS)
 
 
 def find_gyroflow(explicit: str | None = None) -> str | None:
-    """Individua l'eseguibile Gyroflow.
+    """Locate the Gyroflow executable.
 
-    Ordine: percorso esplicito → PATH ('gyroflow') → percorsi noti
-    (``config.GYROFLOW_SEARCH_PATHS``) → AppImage inclusa nella cartella di
-    test ``gopro/``.
+    Order: explicit path -> PATH ('gyroflow') -> well-known locations
+    (``config.GYROFLOW_SEARCH_PATHS``) -> AppImage in the repo test folder
+    ``gopro/`` (development convenience).
     """
     if explicit:
         p = Path(explicit).expanduser()
-        if p.exists() or shutil.which(explicit):
-            return str(p if p.exists() else explicit)
-        return None
+        if p.exists():
+            return str(p)
+        return shutil.which(explicit)
 
     for name in ("gyroflow", "Gyroflow"):
         found = shutil.which(name)
@@ -90,7 +90,6 @@ def find_gyroflow(explicit: str | None = None) -> str | None:
         if p.exists():
             return str(p)
 
-    # Comodità in sviluppo: AppImage nella cartella di test del repo.
     repo_appimage = Path(__file__).resolve().parents[2] / "gopro" / "Gyroflow.AppImage"
     if repo_appimage.exists():
         return str(repo_appimage)
@@ -105,14 +104,13 @@ def write_preset(
     bitrate: int = 100,
     dest_dir: str | Path | None = None,
 ) -> Path:
-    """Genera un preset ``.gyroflow`` temporaneo con path assoluto del profilo.
+    """Write a temporary ``.gyroflow`` preset holding the absolute profile path.
 
-    Restituisce il percorso del preset creato. Il chiamante è responsabile di
-    rimuoverlo (vedi :func:`run`, che lo fa in automatico).
+    Returns the preset path. The caller removes it (:func:`run` does so).
     """
     calib = Path(calibration_file).expanduser().resolve()
     if not calib.exists():
-        raise GyroflowError(f"Profilo lente non trovato: {calib}")
+        raise GyroflowError(f"Lens profile not found: {calib}")
     preset = {
         "version": 2,
         "calibration_file": str(calib),
@@ -127,10 +125,9 @@ def write_preset(
 
 
 def _find_stabilized(src: Path) -> Path | None:
-    """Cerca il file ``<nome>_stabilized.*`` più recente accanto a ``src``."""
-    stem = src.stem
+    """Return the newest ``<name>_stabilized.*`` next to ``src``."""
     matches = sorted(
-        src.parent.glob(f"{stem}_stabilized.*"),
+        src.parent.glob(f"{src.stem}_stabilized.*"),
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )
@@ -146,52 +143,54 @@ def run(
     bitrate: int = 100,
     log: LogCallback | None = None,
     timeout: float | None = None,
+    verbose: bool = False,
 ) -> GyroflowResult:
-    """Stabilizza ``video`` con Gyroflow applicando il profilo lente.
+    """Stabilize ``video`` with Gyroflow using the given lens profile.
 
-    Genera il preset al volo, lancia Gyroflow, filtra gli errori innocui e
-    verifica il successo dalla presenza del file ``_stabilized`` (la riga
-    ``Done in`` è usata come conferma aggiuntiva, non come requisito rigido).
+    Generates the preset, runs Gyroflow, filters the harmless errors and checks
+    success from the presence of the ``_stabilized`` file (the ``Done in`` line
+    is an extra confirmation, not a hard requirement). Gyroflow's own output is
+    only echoed with ``verbose``; on failure its last lines are always shown.
     """
     video = Path(video)
     if not video.exists():
-        raise GyroflowError(f"Video non trovato: {video}")
+        raise GyroflowError(f"Video not found: {video}")
 
     binary = find_gyroflow(gyroflow_bin)
     if binary is None:
         raise GyroflowError(
-            "Gyroflow non trovato. Scarica l'AppImage da gyroflow.xyz e indicala "
-            "con --gyroflow /percorso/Gyroflow.AppImage (o mettila in uno dei "
-            "percorsi noti)."
+            "Gyroflow not found. Download the AppImage from gyroflow.xyz and set it "
+            "with --gyroflow /path/to/Gyroflow.AppImage (GUI: Advanced options), "
+            "or place it in one of the well-known locations."
         )
 
     def emit(msg: str) -> None:
         if log:
             log(msg)
 
-    # Rimuove eventuale output precedente per non scambiarlo per nuovo.
+    # Remember any previous output so it is not mistaken for a new one.
     old = _find_stabilized(video)
-    if old is not None:
-        old_mtime = old.stat().st_mtime
-    else:
-        old_mtime = 0.0
+    old_mtime = old.stat().st_mtime if old is not None else 0.0
 
-    preset = write_preset(
-        calibration_file, codec=codec, bitrate=bitrate, dest_dir=video.parent
-    )
+    preset = write_preset(calibration_file, codec=codec, bitrate=bitrate, dest_dir=video.parent)
     cmd = [binary, str(video), "--preset", str(preset), "-f"]
-    emit(f"Gyroflow: {' '.join(cmd)}")
+    if verbose:
+        emit(f"Gyroflow: {' '.join(cmd)}")
+    else:
+        emit("Gyroflow: stabilizing with the calibrated lens profile…")
 
-    # Su sistemi senza FUSE (o in sandbox) il mount dell'AppImage fallisce.
-    # APPIMAGE_EXTRACT_AND_RUN=1 fa estrarre ed eseguire l'AppImage senza FUSE.
     env = os.environ.copy()
-    # Evita lo spam del backtrace Rust dal panic OpenCL innocuo.
+    # Keep the harmless OpenCL panic from printing a long Rust backtrace.
     env.setdefault("RUST_BACKTRACE", "0")
+    # Without FUSE (or in a sandbox) mounting the AppImage fails;
+    # APPIMAGE_EXTRACT_AND_RUN=1 makes it extract and run instead.
     if binary.lower().endswith(".appimage"):
         env.setdefault("APPIMAGE_EXTRACT_AND_RUN", "1")
 
     done_seconds: float | None = None
     used_wgpu = False
+    benign_count = 0
+    tail: list[str] = []  # Gyroflow's own (non-harmless) lines, for diagnostics
     try:
         proc = subprocess.Popen(
             cmd,
@@ -204,7 +203,7 @@ def run(
         assert proc.stdout is not None
         for raw in proc.stdout:
             line = raw.rstrip("\n")
-            if not line:
+            if not line.strip():
                 continue
             m = _DONE_RE.search(line)
             if m:
@@ -212,29 +211,37 @@ def run(
             if _WGPU_RE.search(line):
                 used_wgpu = True
             if is_benign(line):
-                emit(f"[gyroflow:ignorato] {line}")
+                benign_count += 1
             else:
-                emit(f"[gyroflow] {line}")
+                tail = (tail + [line])[-25:]
+                if verbose:
+                    emit(f"[gyroflow] {line}")
         ret = proc.wait(timeout=timeout)
     except FileNotFoundError as exc:
-        raise GyroflowError(f"Impossibile eseguire Gyroflow: {exc}") from exc
+        raise GyroflowError(f"Cannot run Gyroflow: {exc}") from exc
     finally:
         preset.unlink(missing_ok=True)
 
+    if benign_count:
+        emit(
+            f"Gyroflow: ignored {benign_count} harmless GPU-backend messages "
+            f"(OpenCL/CUDA/AMF probing){' — rendered with wgpu' if used_wgpu else ''}."
+        )
+
     stabilized = _find_stabilized(video)
     is_new = stabilized is not None and stabilized.stat().st_mtime >= old_mtime
-
     if stabilized is None or not is_new:
+        if not verbose:
+            for line in tail:
+                emit(f"[gyroflow] {line}")
         raise GyroflowError(
-            f"Gyroflow non ha prodotto il file stabilizzato per {video.name} "
-            f"(exit code {ret}). Controlla il log sopra."
+            f"Gyroflow did not produce the stabilized file for {video.name} "
+            f"(exit code {ret}). See the log above."
         )
 
     if done_seconds is not None:
-        emit(f"Gyroflow: completato in {done_seconds:.1f}s -> {stabilized.name}")
+        emit(f"Gyroflow: done in {done_seconds:.1f}s -> {stabilized.name}")
     else:
-        emit(f"Gyroflow: output prodotto -> {stabilized.name}")
+        emit(f"Gyroflow: output written -> {stabilized.name}")
 
-    return GyroflowResult(
-        output=stabilized, done_seconds=done_seconds, used_wgpu=used_wgpu
-    )
+    return GyroflowResult(output=stabilized, done_seconds=done_seconds, used_wgpu=used_wgpu)

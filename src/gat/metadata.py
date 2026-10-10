@@ -1,9 +1,8 @@
-"""Lettura metadati dei file GoPro tramite ffprobe.
+"""Read GoPro file metadata with ffprobe.
 
-Rileva risoluzione, fps, durata, codec, aspect ratio e la presenza della traccia
-giroscopio GPMF (handler ``GoPro MET``), necessaria per la stabilizzazione con
-Gyroflow. Fornisce inoltre una validazione rispetto al formato di ripresa atteso
-(2.7K Wide).
+Detects resolution, fps, duration, codec, aspect ratio and the presence of the
+GPMF gyro track (handler ``GoPro MET``) that Gyroflow needs for stabilization,
+and validates the file against the single supported format (2.7K 16:9 Wide).
 """
 
 from __future__ import annotations
@@ -15,29 +14,23 @@ from dataclasses import dataclass, field
 from fractions import Fraction
 from pathlib import Path
 
-# Unico formato SUPPORTATO: 2.7K 16:9 Wide (2704x1520).
-# Il profilo lente calibrato è valido solo per questo formato, quindi il 4:3
-# (e qualsiasi altra risoluzione) non può essere stabilizzato correttamente e
-# viene segnalato e saltato, non elaborato.
+# The ONLY supported format: 2.7K 16:9 Wide (2704x1520).
+# The calibrated lens profile is valid for this format only, so 4:3 (or any
+# other resolution) cannot be stabilized correctly: such files are flagged and
+# skipped, never processed.
 SUPPORTED_RESOLUTION = (2704, 1520)
 
-# Risoluzioni 2.7K note (solo per messaggi diagnostici più chiari).
-KNOWN_2K7 = {
-    (2704, 1520): "16:9",
-    (2704, 2028): "4:3",
-}
-
-# Tolleranza nel riconoscere l'aspect ratio dalla risoluzione reale.
+# Tolerance used when recognising the aspect ratio from the real resolution.
 _ASPECT_TOLERANCE = 0.03
 
 
 class FFprobeError(RuntimeError):
-    """ffprobe assente o fallito su un file."""
+    """ffprobe is missing or failed on a file."""
 
 
 @dataclass
 class MediaInfo:
-    """Metadati rilevanti di un file video."""
+    """Relevant metadata of a video file."""
 
     path: Path
     width: int
@@ -51,29 +44,28 @@ class MediaInfo:
 
     @property
     def aspect(self) -> float:
-        """Aspect ratio numerico (larghezza/altezza)."""
+        """Numeric aspect ratio (width / height)."""
         return self.width / self.height if self.height else 0.0
 
     @property
     def aspect_label(self) -> str:
-        """Etichetta leggibile dell'aspect ratio ('16:9', '4:3' o 'WxH')."""
+        """Readable aspect ratio ('16:9', '4:3' or 'WxH')."""
         if not self.height:
             return "?"
-        ar = self.aspect
-        if abs(ar - 16 / 9) < _ASPECT_TOLERANCE:
+        if abs(self.aspect - 16 / 9) < _ASPECT_TOLERANCE:
             return "16:9"
-        if abs(ar - 4 / 3) < _ASPECT_TOLERANCE:
+        if abs(self.aspect - 4 / 3) < _ASPECT_TOLERANCE:
             return "4:3"
         return f"{self.width}x{self.height}"
 
     @property
     def is_16by9(self) -> bool:
-        """True se l'aspect ratio è ~16:9."""
+        """True when the aspect ratio is ~16:9."""
         return abs(self.aspect - 16 / 9) < _ASPECT_TOLERANCE
 
     @property
     def is_supported(self) -> bool:
-        """True solo per il formato supportato: 2.7K 16:9 (2704x1520)."""
+        """True only for the supported format: 2.7K 16:9 (2704x1520)."""
         return (self.width, self.height) == SUPPORTED_RESOLUTION
 
     def summary(self) -> str:
@@ -85,7 +77,7 @@ class MediaInfo:
 
 
 def _parse_rate(value: str | None) -> float:
-    """Converte una frazione tipo '60000/1001' in float."""
+    """Convert a fraction such as '60000/1001' to float."""
     if not value:
         return 0.0
     try:
@@ -102,17 +94,17 @@ def ffprobe_available() -> bool:
 
 
 def probe(path: str | Path, *, ffprobe_bin: str = "ffprobe") -> MediaInfo:
-    """Esegue ffprobe su ``path`` e restituisce un :class:`MediaInfo`.
+    """Run ffprobe on ``path`` and return a :class:`MediaInfo`.
 
-    Rileva la traccia GPMF cercando uno stream ``data`` con handler
-    ``GoPro MET`` (il contenitore dei dati giroscopio della GoPro).
+    The GPMF track is detected as a ``data`` stream whose handler is
+    ``GoPro MET`` (the container of the GoPro gyro data).
     """
     path = Path(path)
     if not path.exists():
-        raise FFprobeError(f"File non trovato: {path}")
+        raise FFprobeError(f"File not found: {path}")
     if shutil.which(ffprobe_bin) is None:
         raise FFprobeError(
-            f"ffprobe non trovato ('{ffprobe_bin}'). Installa ffmpeg: sudo apt install ffmpeg"
+            f"ffprobe not found ('{ffprobe_bin}'). Install ffmpeg: sudo apt install ffmpeg"
         )
 
     cmd = [
@@ -126,13 +118,9 @@ def probe(path: str | Path, *, ffprobe_bin: str = "ffprobe") -> MediaInfo:
         str(path),
     ]
     try:
-        out = subprocess.run(
-            cmd, capture_output=True, text=True, check=True
-        ).stdout
-    except subprocess.CalledProcessError as exc:  # pragma: no cover - dipende da ffprobe
-        raise FFprobeError(
-            f"ffprobe fallito su {path.name}: {exc.stderr.strip()}"
-        ) from exc
+        out = subprocess.run(cmd, capture_output=True, text=True, check=True).stdout
+    except subprocess.CalledProcessError as exc:  # pragma: no cover - depends on ffprobe
+        raise FFprobeError(f"ffprobe failed on {path.name}: {exc.stderr.strip()}") from exc
 
     data = json.loads(out)
     streams = data.get("streams", [])
@@ -140,13 +128,11 @@ def probe(path: str | Path, *, ffprobe_bin: str = "ffprobe") -> MediaInfo:
 
     video = next((s for s in streams if s.get("codec_type") == "video"), None)
     if video is None:
-        raise FFprobeError(f"Nessuno stream video in {path.name}")
+        raise FFprobeError(f"No video stream in {path.name}")
 
     width = int(video.get("width", 0))
     height = int(video.get("height", 0))
-    fps = _parse_rate(video.get("avg_frame_rate")) or _parse_rate(
-        video.get("r_frame_rate")
-    )
+    fps = _parse_rate(video.get("avg_frame_rate")) or _parse_rate(video.get("r_frame_rate"))
     codec = video.get("codec_name", "?")
     duration = float(fmt.get("duration", video.get("duration", 0.0)) or 0.0)
 
@@ -155,12 +141,12 @@ def probe(path: str | Path, *, ffprobe_bin: str = "ffprobe") -> MediaInfo:
     for stream in streams:
         tags = stream.get("tags", {}) or {}
         handler = tags.get("handler_name", "")
-        # La traccia giroscopio GoPro è uno stream dati con handler "GoPro MET".
+        # The GoPro gyro track is a data stream with handler "GoPro MET".
         if stream.get("codec_type") == "data" and "GoPro MET" in handler:
             has_gyro = True
             gyro_handler = handler
             break
-        # Fallback: alcuni dump riportano "gpmd" come codec_tag_string.
+        # Fallback: some dumps report "gpmd" as codec_tag_string.
         if stream.get("codec_tag_string") == "gpmd":
             has_gyro = True
             gyro_handler = handler or "gpmd"
@@ -181,11 +167,11 @@ def probe(path: str | Path, *, ffprobe_bin: str = "ffprobe") -> MediaInfo:
 
 
 def validate(info: MediaInfo) -> list[str]:
-    """Restituisce avvisi in inglese se il file non è nel formato supportato.
+    """Return warnings when the file is not in the supported format.
 
-    Il tool supporta SOLO clip 2.7K 16:9 (2704x1520): il profilo lente calibrato
-    è valido solo per questo formato. I file non conformi vanno segnalati e
-    saltati, non elaborati.
+    The toolkit supports ONLY 2.7K 16:9 (2704x1520) clips because the
+    calibrated lens profile is valid for that format alone. Non-conforming files
+    are flagged and skipped, never processed.
     """
     warnings: list[str] = []
     if not info.is_supported:

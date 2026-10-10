@@ -9,30 +9,24 @@ dist/
 venv/
 .pytest_cache/
 
-# --- Gyroflow / eseguibili esterni (NON vanno nel repo) ---
-gopro/Gyroflow.AppImage
+# --- Gyroflow / external executables (never committed) ---
 *.AppImage
 
-# --- Output della pipeline ---
+# --- Pipeline outputs ---
 gopro/finali/
 gopro/finali_calibrato/
-gopro/**/.tmp_stabilizzati/
-**/.tmp_stabilizzati/
+**/.tmp_stabilized/
 *_stabilized.*
+*_anamorphic_*.mp4
 *_anamorfico_*.mp4
 
-# --- Materiale di test NON pubblicato ---
-# I clip .MP4 di test sono inclusi via Git LFS (vedi .gitattributes).
-# File collaterali della GoPro non necessari:
+# --- GoPro side-car files (not needed) ---
 *.LRV
 *.THM
-gopro/**/*.LRV
-gopro/**/*.THM
 
-# --- Packaging / AppImage ---
+# --- Packaging / AppImage build ---
 packaging/build/
-packaging/*.AppImage
 
-# --- Varie ---
+# --- Misc ---
 *.log
 .DS_Store

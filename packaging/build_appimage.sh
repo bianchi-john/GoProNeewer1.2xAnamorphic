@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Costruisce l'AppImage del GoPro Anamorphic Toolkit con python-appimage.
+# Build the GoPro Anamorphic Toolkit AppImage with python-appimage.
 #
-# L'AppImage include: un runtime Python, PySide6 (GUI) e il pacchetto `gat`
-# con il profilo lente di default. NON include Gyroflow né ffmpeg: restano
-# requisiti esterni (vedi README).
+# The AppImage bundles a Python runtime, PySide6 (GUI) and the `gat` package
+# with its resources (default lens profile, preview images). It does NOT bundle
+# Gyroflow or ffmpeg: those stay external requirements (see README).
 #
-# Uso:
+# Usage:
 #   packaging/build_appimage.sh [PYTHON_VERSION] [LINUX_TAG]
-# Esempi:
+# Examples:
 #   packaging/build_appimage.sh              # default: 3.12 / manylinux_2_28_x86_64
 #   packaging/build_appimage.sh 3.11
 set -euo pipefail
@@ -19,17 +19,17 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RECIPE="$ROOT/packaging/appimage"
 BUILD_DIR="$ROOT/packaging/build"
 
-# Su sistemi senza FUSE appimagetool deve estrarsi ed eseguirsi.
+# Without FUSE, appimagetool must extract itself and run.
 export APPIMAGE_EXTRACT_AND_RUN=1
 
-# Serve python-appimage e il pacchetto gat importabile (per "local+gat").
+# python-appimage is required, and `gat` must be importable (for "local+gat").
 PYTHON="${PYTHON:-python3}"
 if ! "$PYTHON" -c "import python_appimage" 2>/dev/null; then
-  echo "python-appimage non trovato. Installa con: pip install python-appimage" >&2
+  echo "python-appimage not found. Install it with: pip install python-appimage" >&2
   exit 1
 fi
 if ! "$PYTHON" -c "import gat" 2>/dev/null; then
-  echo "Il pacchetto 'gat' non è importabile. Installa prima: pip install -e ." >&2
+  echo "The 'gat' package is not importable. Install it first: pip install -e ." >&2
   exit 1
 fi
 
@@ -37,20 +37,22 @@ rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
 
-echo ">> Costruzione AppImage (Python $PY_VER, $LINUX_TAG)…"
+echo ">> Building AppImage (Python $PY_VER, $LINUX_TAG)…"
+# Note: the desktop file Name= must not contain spaces — python-appimage passes
+# the output name to appimagetool unquoted.
 "$PYTHON" -m python_appimage build app \
   -p "$PY_VER" \
   -l "$LINUX_TAG" \
   -n GoProAnamorphic \
   "$RECIPE"
 
-# python-appimage produce un file *.AppImage nella cwd.
+# python-appimage writes a *.AppImage into the current directory.
 OUT="$(ls -t "$BUILD_DIR"/*.AppImage 2>/dev/null | head -n1 || true)"
 if [ -z "$OUT" ]; then
-  echo "Build fallita: nessun .AppImage prodotto." >&2
+  echo "Build failed: no .AppImage produced." >&2
   exit 1
 fi
 FINAL="$ROOT/packaging/GoProAnamorphic-x86_64.AppImage"
 mv -f "$OUT" "$FINAL"
 chmod +x "$FINAL"
-echo ">> Fatto: $FINAL ($(du -h "$FINAL" | cut -f1))"
+echo ">> Done: $FINAL ($(du -h "$FINAL" | cut -f1))"

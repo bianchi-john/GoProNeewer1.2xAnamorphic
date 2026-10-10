@@ -1,9 +1,9 @@
 """GoPro Anamorphic Toolkit (gat).
 
-Pipeline per clip GoPro HERO11 Black girati con lente anamorfica Neewer LS-56 1.2x:
-stabilizzazione opzionale con Gyroflow (profilo lente calibrato) + desqueeze
-anamorfico + crop + export leggero in H.265.
+Pipeline for GoPro HERO11 Black clips shot with the Neewer LS-56 1.2x
+anamorphic lens: optional Gyroflow stabilization (calibrated lens profile) +
+anamorphic desqueeze + optional Summer look + full-resolution H.265 export.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __all__ = ["__version__"]

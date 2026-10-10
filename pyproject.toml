@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gopro-anamorphic-toolkit"
-version = "0.1.0"
-description = "Stabilizzazione (Gyroflow) + desqueeze anamorfico 1.2x + export H.265 per GoPro HERO11 Black + Neewer LS-56"
+version = "0.2.0"
+description = "Gyroflow stabilization + 1.2x anamorphic desqueeze + full-resolution H.265 export for GoPro HERO11 Black + Neewer LS-56"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -13,13 +13,14 @@ authors = [{ name = "John Bianchi" }]
 keywords = ["gopro", "anamorphic", "gyroflow", "ffmpeg", "video", "neewer"]
 classifiers = [
     "Environment :: Console",
+    "Environment :: X11 Applications :: Qt",
     "License :: OSI Approved :: MIT License",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Topic :: Multimedia :: Video",
 ]
-# Nessuna dipendenza Python obbligatoria per il core CLI:
-# richiede solo ffmpeg/ffprobe e (per la stabilizzazione) Gyroflow come binari esterni.
+# The core CLI has no mandatory Python dependency: it only needs ffmpeg/ffprobe
+# and (for stabilization) Gyroflow as external executables.
 dependencies = []
 
 [project.optional-dependencies]
@@ -41,4 +42,4 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-gat = ["resources/*.json"]
+gat = ["resources/*.json", "resources/previews/*", "resources/ui/*.svg"]
