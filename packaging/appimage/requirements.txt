@@ -1,0 +1,8 @@
+# Dipendenze Python bundlate nell'AppImage.
+# PySide6 fornisce la GUI (Qt). Nessuna dipendenza nativa extra: ffmpeg e
+# Gyroflow restano requisiti ESTERNI, non inclusi nell'AppImage.
+PySide6>=6.5
+
+# Il nostro pacchetto viene copiato direttamente dai sorgenti installati
+# (import name "gat"), così finisce in site-packages dell'AppImage.
+local+gat

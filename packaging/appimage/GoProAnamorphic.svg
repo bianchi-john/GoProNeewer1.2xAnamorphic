@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b3a55"/>
+      <stop offset="1" stop-color="#11161f"/>
+    </linearGradient>
+    <linearGradient id="flare" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3bc9ff" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#7fe3ff" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#3bc9ff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="256" height="256" rx="48" fill="url(#bg)"/>
+  <!-- Cornice widescreen anamorfica 2.39:1 -->
+  <rect x="34" y="96" width="188" height="79" rx="8" fill="none" stroke="#e7eef7" stroke-width="7"/>
+  <!-- Lente -->
+  <circle cx="128" cy="135" r="30" fill="#0e1420" stroke="#9fb3cc" stroke-width="5"/>
+  <circle cx="128" cy="135" r="15" fill="#1c3b63"/>
+  <circle cx="120" cy="127" r="5" fill="#cfe8ff" opacity="0.9"/>
+  <!-- Flare orizzontale (firma anamorfica) -->
+  <rect x="24" y="131" width="208" height="8" rx="4" fill="url(#flare)"/>
+</svg>

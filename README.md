@@ -14,8 +14,8 @@ La pipeline fa tre cose:
 3. **Export** leggero in H.265 (default 1080p, `tag:v hvc1` per compatibilità
    Apple/TV).
 
-> Lo sviluppo procede per fasi. **Fase 1 (core CLI)** e **Fase 2 (GUI PySide6)**
-> sono complete. La **Fase 3 (AppImage)** è in arrivo.
+> Sviluppo per fasi, tutte complete: **Fase 1 (core CLI)**, **Fase 2 (GUI
+> PySide6)** e **Fase 3 (packaging AppImage)**.
 
 ---
 
@@ -113,6 +113,31 @@ gat input/ output/ --crf 20 --width 2560 --save-config   # salva ed esce
 ```
 
 Le opzioni da riga di comando hanno sempre la priorità sul file di config.
+
+## AppImage (installazione senza Python)
+
+È possibile distribuire l'app come singolo file **AppImage** (include Python +
+PySide6 + `gat` + profilo lente). **Gyroflow e ffmpeg NON sono inclusi**: restano
+requisiti esterni che l'utente installa/scarica a parte.
+
+Costruzione:
+
+```bash
+pip install python-appimage
+pip install -e .                      # rende 'gat' importabile (local+gat)
+packaging/build_appimage.sh          # -> packaging/GoProAnamorphic-x86_64.AppImage
+```
+
+Uso dell'AppImage:
+
+```bash
+./GoProAnamorphic-x86_64.AppImage                    # avvia la GUI
+./GoProAnamorphic-x86_64.AppImage cli input/ output/ # usa la CLI
+```
+
+> L'AppImage richiede **glibc ≥ 2.28** (distro recenti). Richiede comunque
+> **ffmpeg** nel sistema e, per la stabilizzazione, l'**AppImage di Gyroflow**
+> indicata nelle impostazioni.
 
 ## Calibrazione della propria lente
 

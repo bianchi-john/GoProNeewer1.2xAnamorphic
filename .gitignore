@@ -29,6 +29,10 @@ gopro/**/.tmp_stabilizzati/
 gopro/**/*.LRV
 gopro/**/*.THM
 
+# --- Packaging / AppImage ---
+packaging/build/
+packaging/*.AppImage
+
 # --- Varie ---
 *.log
 .DS_Store

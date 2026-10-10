@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=GoProAnamorphic
+GenericName=GoPro Anamorphic Toolkit
+Comment=Stabilizzazione (Gyroflow) + desqueeze anamorfico 1.2x + export H.265
+Exec=gat
+Icon=GoProAnamorphic
+Categories=AudioVideo;Video;
+Terminal=false
