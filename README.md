@@ -14,8 +14,8 @@ La pipeline fa tre cose:
 3. **Export** leggero in H.265 (default 1080p, `tag:v hvc1` per compatibilità
    Apple/TV).
 
-> Lo sviluppo procede per fasi. **Fase 1 (core CLI)** è completa. La **Fase 2
-> (GUI PySide6)** e la **Fase 3 (AppImage)** sono in arrivo.
+> Lo sviluppo procede per fasi. **Fase 1 (core CLI)** e **Fase 2 (GUI PySide6)**
+> sono complete. La **Fase 3 (AppImage)** è in arrivo.
 
 ---
 
@@ -42,7 +42,13 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -e .
 ```
 
-Questo installa il comando `gat`.
+Questo installa il comando `gat` (CLI). Per la **GUI** installa anche PySide6:
+
+```bash
+pip install -e ".[gui]"
+```
+
+che aggiunge il comando `gat-gui`.
 
 ## Formato di ripresa consigliato
 
@@ -54,7 +60,18 @@ Verificato sul campo:
 - Usa **sempre i file ORIGINALI** dalla scheda SD: i dati giroscopio (GPMF) si
   perdono se il file passa da app/editor che ricodificano.
 
-## Uso
+## Uso — GUI
+
+```bash
+gat-gui
+```
+
+Interfaccia minimale: scegli una cartella (o trascina file .MP4), controlla i
+metadati rilevati e gli avvisi nella tabella, seleziona formato e qualità,
+spunta *Stabilizza con Gyroflow*, indica la cartella di output e premi **Avvia**.
+Barra di avanzamento e log integrati.
+
+## Uso — CLI
 
 ```bash
 # Stabilizza + desqueeze, formato scelto automaticamente in base all'input

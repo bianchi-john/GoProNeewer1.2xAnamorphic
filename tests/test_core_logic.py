@@ -85,3 +85,21 @@ def test_output_name():
     assert core.output_name(Path("GX010050.MP4"), 1920, 900) == (
         "GX010050_anamorfico_1920x900.mp4"
     )
+
+
+# --- collect_files ---------------------------------------------------------
+
+def test_collect_files_dedup_and_mixed(tmp_path):
+    (tmp_path / "a.MP4").write_bytes(b"")
+    (tmp_path / "b.mp4").write_bytes(b"")
+    (tmp_path / "note.txt").write_bytes(b"")
+    # cartella + un file esplicito già incluso nella cartella -> nessun duplicato
+    files = core.collect_files([tmp_path, tmp_path / "a.MP4"])
+    names = sorted(p.name for p in files)
+    assert names == ["a.MP4", "b.mp4"]
+
+
+def test_collect_files_single_path(tmp_path):
+    (tmp_path / "x.MP4").write_bytes(b"")
+    files = core.collect_files(tmp_path)
+    assert [p.name for p in files] == ["x.MP4"]

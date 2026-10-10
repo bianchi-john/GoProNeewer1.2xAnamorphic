@@ -119,6 +119,21 @@ def build_vf(squeeze: float, ratio: float, width: int, height: int, zoom: float)
 # Scansione input
 # ---------------------------------------------------------------------------
 
+def collect_files(inputs: "str | Path | list[str | Path]") -> list[Path]:
+    """Raccoglie i file .mp4 da un percorso (cartella/file) o da una lista mista.
+
+    Le cartelle vengono espanse; i singoli file .mp4 sono presi così come sono.
+    Rimuove i duplicati mantenendo l'ordine (per nome).
+    """
+    if isinstance(inputs, (str, Path)):
+        return scan_input(inputs)
+    seen: dict[Path, None] = {}
+    for item in inputs:
+        for f in scan_input(item):
+            seen.setdefault(f.resolve(), None)
+    return sorted(seen.keys(), key=lambda p: p.name.lower())
+
+
 def scan_input(input_dir: str | Path) -> list[Path]:
     """Elenca i file .mp4 (case-insensitive) in una cartella, ordinati per nome."""
     input_dir = Path(input_dir)
@@ -328,7 +343,7 @@ def process_file(
 
 
 def run_pipeline(
-    input_path: str | Path,
+    input_path: "str | Path | list[str | Path]",
     out_dir: str | Path,
     settings: Settings,
     *,
@@ -338,9 +353,9 @@ def run_pipeline(
     ffmpeg_bin: str = "ffmpeg",
     ffprobe_bin: str = "ffprobe",
 ) -> PipelineReport:
-    """Elabora tutti i file .mp4 di una cartella (o un singolo file)."""
+    """Elabora i file .mp4 di una cartella, un singolo file o una lista."""
     out_dir = Path(out_dir)
-    files = scan_input(input_path)
+    files = collect_files(input_path)
     report = PipelineReport()
     if not files:
         raise PipelineError(f"Nessun file .MP4 trovato in {input_path}")
