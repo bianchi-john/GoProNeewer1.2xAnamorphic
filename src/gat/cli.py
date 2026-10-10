@@ -70,13 +70,11 @@ def build_parser() -> argparse.ArgumentParser:
     stab.add_argument("--calibration", dest="calibration_file", help="Profilo lente .json (default: incluso)")
     stab.add_argument("--gyroflow-bitrate", type=int, help="Bitrate (Mbps) output intermedio Gyroflow")
 
-    out = p.add_argument_group("desqueeze / export")
-    out.add_argument("--squeeze", type=float, help="Fattore anamorfico orizzontale")
-    out.add_argument("--aspect", help="Formato finale: auto | 16:9 | 2.13:1 | W:H")
-    out.add_argument("--width", type=int, help="Larghezza finale in pixel")
-    out.add_argument("--zoom", help="Ritaglio anti-vignettatura: auto | fattore (es. 1.3)")
-    out.add_argument("--crf", type=int, help="Qualità H.265 (18-28; più basso = migliore)")
-    out.add_argument("--preset", help="Preset x265 (ultrafast..placebo)")
+    out = p.add_argument_group("desqueeze / export (piena risoluzione, alta qualità)")
+    out.add_argument("--squeeze", type=float, help="Fattore anamorfico orizzontale (default 1.2)")
+    out.add_argument("--zoom", help="Ritaglio anti-vignettatura: auto | fattore (es. 1.2)")
+    out.add_argument("--crf", type=int, help="Qualità H.265 (più basso = migliore; default 18)")
+    out.add_argument("--preset", help="Preset x265 (ultrafast..placebo; default slow)")
 
     p.add_argument("--overwrite", action="store_true", help="Rielabora anche se l'output esiste")
     p.add_argument(
@@ -94,8 +92,6 @@ def _overrides_from_args(args: argparse.Namespace) -> dict:
         "calibration_file",
         "gyroflow_bitrate",
         "squeeze",
-        "aspect",
-        "width",
         "zoom",
         "crf",
         "preset",
@@ -150,8 +146,9 @@ def main(argv: list[str] | None = None) -> int:
 
     _print(f"gat {__version__}")
     _print(
-        f"Stabilizzazione: {'ON' if settings.stabilize else 'OFF'} | "
-        f"aspect: {settings.aspect} | width: {settings.width} | CRF: {settings.crf}"
+        f"Stabilization: {'ON' if settings.stabilize else 'OFF'} | "
+        f"full-res desqueeze {settings.squeeze}x | H.265 CRF {settings.crf} "
+        f"preset {settings.preset} | 16:9 2.7K only"
     )
 
     try:

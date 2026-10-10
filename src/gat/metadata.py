@@ -15,8 +15,14 @@ from dataclasses import dataclass, field
 from fractions import Fraction
 from pathlib import Path
 
-# Risoluzioni 2.7K attese per la HERO11 Black (Wide).
-EXPECTED_2K7 = {
+# Unico formato SUPPORTATO: 2.7K 16:9 Wide (2704x1520).
+# Il profilo lente calibrato è valido solo per questo formato, quindi il 4:3
+# (e qualsiasi altra risoluzione) non può essere stabilizzato correttamente e
+# viene segnalato e saltato, non elaborato.
+SUPPORTED_RESOLUTION = (2704, 1520)
+
+# Risoluzioni 2.7K note (solo per messaggi diagnostici più chiari).
+KNOWN_2K7 = {
     (2704, 1520): "16:9",
     (2704, 2028): "4:3",
 }
@@ -61,12 +67,17 @@ class MediaInfo:
         return f"{self.width}x{self.height}"
 
     @property
-    def is_expected_format(self) -> bool:
-        """True se la risoluzione corrisponde a un formato 2.7K atteso."""
-        return (self.width, self.height) in EXPECTED_2K7
+    def is_16by9(self) -> bool:
+        """True se l'aspect ratio è ~16:9."""
+        return abs(self.aspect - 16 / 9) < _ASPECT_TOLERANCE
+
+    @property
+    def is_supported(self) -> bool:
+        """True solo per il formato supportato: 2.7K 16:9 (2704x1520)."""
+        return (self.width, self.height) == SUPPORTED_RESOLUTION
 
     def summary(self) -> str:
-        gyro = "GPMF ok" if self.has_gyro else "NO gyro"
+        gyro = "gyro OK" if self.has_gyro else "NO gyro"
         return (
             f"{self.path.name}: {self.width}x{self.height} "
             f"({self.aspect_label}) {self.fps:.2f}fps {self.codec} [{gyro}]"
@@ -170,16 +181,27 @@ def probe(path: str | Path, *, ffprobe_bin: str = "ffprobe") -> MediaInfo:
 
 
 def validate(info: MediaInfo) -> list[str]:
-    """Restituisce una lista di avvisi se il file non è nel formato atteso."""
+    """Restituisce avvisi in inglese se il file non è nel formato supportato.
+
+    Il tool supporta SOLO clip 2.7K 16:9 (2704x1520): il profilo lente calibrato
+    è valido solo per questo formato. I file non conformi vanno segnalati e
+    saltati, non elaborati.
+    """
     warnings: list[str] = []
-    if not info.is_expected_format:
-        warnings.append(
-            f"Risoluzione inattesa {info.width}x{info.height}: "
-            f"attesa 2.7K (2704x1520 16:9 o 2704x2028 4:3)."
-        )
+    if not info.is_supported:
+        if not info.is_16by9:
+            warnings.append(
+                f"Not 16:9 ({info.aspect_label}): unsupported. "
+                f"Only 2.7K 16:9 (2704x1520) clips can be processed — will be skipped."
+            )
+        else:
+            warnings.append(
+                f"Unexpected resolution {info.width}x{info.height}: "
+                f"only 2.7K 16:9 (2704x1520) is supported — will be skipped."
+            )
     if not info.has_gyro:
         warnings.append(
-            "Traccia giroscopio GPMF assente: la stabilizzazione con Gyroflow "
-            "non sarà possibile (usa i file ORIGINALI dalla scheda SD)."
+            "No GPMF gyro track: stabilization not possible "
+            "(use the ORIGINAL files from the SD card)."
         )
     return warnings

@@ -15,7 +15,6 @@ from __future__ import annotations
 import shutil
 import subprocess
 from dataclasses import dataclass, field
-from fractions import Fraction
 from pathlib import Path
 from typing import Callable
 
@@ -56,62 +55,55 @@ class PipelineReport:
 
 
 # ---------------------------------------------------------------------------
-# Risoluzione dei parametri "auto"
+# Geometria: desqueeze a piena risoluzione (niente downscale)
 # ---------------------------------------------------------------------------
-
-def aspect_to_ratio(aspect: str, info: MediaInfo | None = None) -> float:
-    """Converte una specifica di aspect ('16:9', '2.13:1', '2.13', 'auto') in float.
-
-    'auto': 4:3 in input -> 16:9 (1080p TV); 16:9 in input -> 2.13:1 (cinema,
-    cioè praticamente nessun crop verticale dopo il desqueeze).
-    """
-    aspect = str(aspect).strip().lower()
-    if aspect == "auto":
-        if info is not None and info.aspect_label == "4:3":
-            return 16 / 9
-        # Default per 16:9 (e sconosciuti): cinema anamorfico ~2.13:1.
-        return 2704 * 1.2 / 1520  # ~2.134
-    if ":" in aspect:
-        w, _, h = aspect.partition(":")
-        return float(Fraction(w) / Fraction(h))
-    return float(aspect)
+#
+# Nota onesta sulla qualità: il desqueeze (scale orizzontale 1.2x con Lanczos)
+# e, quando attiva, la stabilizzazione Gyroflow RICAMPIONANO l'immagine. Quindi
+# l'output è "near-original": qualità molto alta a piena risoluzione, ma NON
+# bit-identico alla sorgente. Per questo si usa un CRF basso (18) così da non
+# aggiungere perdite percepibili sopra al ricampionamento.
 
 
-def zoom_factor(zoom: str, info: MediaInfo | None, stabilized: bool) -> float:
-    """Determina il ritaglio anti-vignettatura.
+def _ff_even(value: float) -> int:
+    """Replica ``trunc(x/2)*2`` di ffmpeg: intero pari per troncamento."""
+    return int(value / 2) * 2
 
-    Con stabilizzazione Gyroflow ritaglia già i bordi -> zoom 1.0.
-    Senza stabilizzazione: 4:3 Wide ~1.3x, 16:9 Wide ~1.2x.
+
+def zoom_factor(zoom: str, stabilized: bool) -> float:
+    """Ritaglio anti-vignettatura per clip 16:9 Wide.
+
+    Con stabilizzazione, Gyroflow ritaglia già i bordi -> zoom 1.0.
+    Senza stabilizzazione, in 16:9 Wide serve ~1.2x per togliere la vignettatura.
     """
     zoom = str(zoom).strip().lower()
     if zoom == "auto":
-        if stabilized:
-            return 1.0
-        if info is not None and info.aspect_label == "4:3":
-            return 1.3
-        return 1.2
+        return 1.0 if stabilized else 1.2
     return float(zoom)
 
 
-def target_height(width: int, ratio: float) -> int:
-    """Altezza pari dal rapporto d'aspetto."""
-    h = round(width / ratio)
-    if h % 2:
-        h -= 1
-    return h
+def output_dimensions(width: int, height: int, squeeze: float, zoom: float) -> tuple[int, int]:
+    """Dimensioni finali (pari) dopo desqueeze 1.2x e crop anti-vignettatura.
+
+    Da 2704x1520 con squeeze 1.2 e zoom 1.0 -> ~3244x1520 (cinema ~2.13:1).
+    Mirrora la matematica sequenziale del filtro ffmpeg (desqueeze poi crop).
+    """
+    w1 = _ff_even(width * squeeze)  # desqueeze
+    w = _ff_even(w1 / zoom)  # crop anti-vignettatura
+    h = _ff_even(height / zoom)
+    return w, h
 
 
-def build_vf(squeeze: float, ratio: float, width: int, height: int, zoom: float) -> str:
-    """Costruisce la catena di filtri ffmpeg.
+def build_vf(squeeze: float, zoom: float) -> str:
+    """Catena di filtri ffmpeg: desqueeze 1.2x -> crop anti-vignettatura.
 
-    desqueeze orizzontale -> crop centrato al formato -> crop anti-vignettatura
-    -> scale finale. Porta la logica dello script bash di riferimento.
+    NESSUN downscale: l'output resta a piena risoluzione. Il clip 16:9
+    desqueezato è già ~2.13:1 cinematografico, quindi non serve altro crop di
+    formato.
     """
     return (
         f"scale=trunc(iw*{squeeze}/2)*2:ih:flags=lanczos,setsar=1,"
-        f"crop='min(iw,trunc(ih*{ratio:.6f}/2)*2)':'min(ih,trunc(iw/{ratio:.6f}/2)*2)',"
-        f"crop=trunc(iw/{zoom}/2)*2:trunc(ih/{zoom}/2)*2,"
-        f"scale={width}:{height}:flags=lanczos"
+        f"crop=trunc(iw/{zoom}/2)*2:trunc(ih/{zoom}/2)*2"
     )
 
 
@@ -231,7 +223,7 @@ def _run_ffmpeg(
 # ---------------------------------------------------------------------------
 
 def output_name(src: Path, width: int, height: int) -> str:
-    return f"{src.stem}_anamorfico_{width}x{height}.mp4"
+    return f"{src.stem}_anamorphic_{width}x{height}.mp4"
 
 
 def process_file(
@@ -263,22 +255,31 @@ def process_file(
     for w in info.warnings:
         emit(f"  ! {w}")
 
-    ratio = aspect_to_ratio(settings.aspect, info)
-    height = target_height(settings.width, ratio)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    final = out_dir / output_name(src, settings.width, height)
+    # Solo 2.7K 16:9 è supportato: qualsiasi altro formato viene SALTATO,
+    # non elaborato (il profilo lente non è valido per altri formati).
+    if not info.is_supported:
+        emit("  -> SKIPPED (unsupported format).")
+        return FileResult(
+            src, None, ok=True, skipped=True, message="skipped: unsupported format"
+        )
 
-    if final.exists() and not overwrite:
-        emit(f"  Già presente, salto: {final.name}")
-        return FileResult(src, final, ok=True, skipped=True, message="esistente")
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     stabilized = False
     ffmpeg_input = src
 
     want_stab = settings.stabilize
     if want_stab and not info.has_gyro:
-        emit("  ! Niente GPMF: salto la stabilizzazione per questo file.")
+        emit("  ! No GPMF gyro track: stabilization skipped for this file.")
         want_stab = False
+
+    zoom = zoom_factor(settings.zoom, want_stab)
+    out_w, out_h = output_dimensions(info.width, info.height, settings.squeeze, zoom)
+    final = out_dir / output_name(src, out_w, out_h)
+
+    if final.exists() and not overwrite:
+        emit(f"  Already exists, skipping: {final.name}")
+        return FileResult(src, final, ok=True, skipped=True, message="already exists")
 
     tmp_stab: Path | None = None
     try:
@@ -297,7 +298,7 @@ def process_file(
                     "Profilo lente non disponibile: indicane uno con --calibration "
                     "o includi resources/neewer_lens.json."
                 )
-            phase("stabilizzazione", 0.0)
+            phase("stabilization", 0.0)
             result = gyroflow.run(
                 work_src,
                 calib,
@@ -309,13 +310,18 @@ def process_file(
             tmp_stab = result.output
             ffmpeg_input = result.output
             stabilized = True
-            phase("stabilizzazione", 1.0)
+            phase("stabilization", 1.0)
 
-        zoom = zoom_factor(settings.zoom, info, stabilized)
-        vf = build_vf(settings.squeeze, ratio, settings.width, height, zoom)
+        # Stato esplicito della stabilizzazione nel log.
+        if stabilized:
+            emit("  Stabilization: APPLIED (Gyroflow + calibrated lens profile)")
+        else:
+            emit("  Stabilization: OFF (desqueeze + export only)")
+
+        vf = build_vf(settings.squeeze, zoom)
         emit(
-            f"  Export {settings.width}x{height} (AR {ratio:.3f}, zoom {zoom}, "
-            f"CRF {settings.crf}){' [stabilizzato]' if stabilized else ''}"
+            f"  Export {out_w}x{out_h} full-res (desqueeze {settings.squeeze}x, "
+            f"zoom {zoom}, H.265 CRF {settings.crf} preset {settings.preset})"
         )
         phase("export", 0.0)
         _run_ffmpeg(

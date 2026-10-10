@@ -5,68 +5,55 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from gat import core, gyroflow  # noqa: E402
+from gat import core, gyroflow, metadata  # noqa: E402
 from gat.metadata import MediaInfo  # noqa: E402
 
 
-def _info(w, h):
+def _info(w, h, gyro=True):
     return MediaInfo(
         path=Path("x.mp4"), width=w, height=h, fps=59.94,
-        duration=10.0, codec="hevc", has_gyro=True,
+        duration=10.0, codec="hevc", has_gyro=gyro,
     )
-
-
-# --- aspect_to_ratio -------------------------------------------------------
-
-def test_aspect_explicit_ratio():
-    assert abs(core.aspect_to_ratio("16:9") - 16 / 9) < 1e-6
-    assert abs(core.aspect_to_ratio("2.13:1") - 2.13) < 1e-6
-    assert abs(core.aspect_to_ratio("2.0") - 2.0) < 1e-6
-
-
-def test_aspect_auto_4by3_gives_16by9():
-    assert abs(core.aspect_to_ratio("auto", _info(2704, 2028)) - 16 / 9) < 1e-6
-
-
-def test_aspect_auto_16by9_gives_cinema():
-    ratio = core.aspect_to_ratio("auto", _info(2704, 1520))
-    assert 2.1 < ratio < 2.15  # ~2.134 anamorfico
 
 
 # --- zoom_factor -----------------------------------------------------------
 
 def test_zoom_stabilized_is_one():
-    assert core.zoom_factor("auto", _info(2704, 2028), stabilized=True) == 1.0
+    assert core.zoom_factor("auto", stabilized=True) == 1.0
 
 
-def test_zoom_auto_4by3_no_stab():
-    assert core.zoom_factor("auto", _info(2704, 2028), stabilized=False) == 1.3
-
-
-def test_zoom_auto_16by9_no_stab():
-    assert core.zoom_factor("auto", _info(2704, 1520), stabilized=False) == 1.2
+def test_zoom_auto_no_stab():
+    assert core.zoom_factor("auto", stabilized=False) == 1.2
 
 
 def test_zoom_explicit():
-    assert core.zoom_factor("1.15", _info(2704, 1520), stabilized=True) == 1.15
+    assert core.zoom_factor("1.15", stabilized=True) == 1.15
 
 
-# --- target_height ---------------------------------------------------------
+# --- output_dimensions (full resolution, no downscale) ---------------------
 
-def test_target_height_even():
-    assert core.target_height(1920, 16 / 9) == 1080
-    h = core.target_height(1920, 2.134)
-    assert h % 2 == 0
-    assert 898 <= h <= 902  # ~900
+def test_output_dimensions_stabilized_fullres():
+    # 2704x1520 desqueeze 1.2x, zoom 1.0 -> ~3244x1520 (cinema ~2.13:1)
+    w, h = core.output_dimensions(2704, 1520, squeeze=1.2, zoom=1.0)
+    assert w == 3244 and h == 1520
+    assert w % 2 == 0 and h % 2 == 0
 
 
-# --- build_vf --------------------------------------------------------------
+def test_output_dimensions_no_stab_vignette_crop():
+    # zoom 1.2 riduce per togliere la vignettatura, ma resta piena qualità
+    w, h = core.output_dimensions(2704, 1520, squeeze=1.2, zoom=1.2)
+    assert w == 2702 and h == 1266
+    assert w % 2 == 0 and h % 2 == 0
 
-def test_build_vf_contains_steps():
-    vf = core.build_vf(1.2, 16 / 9, 1920, 1080, 1.0)
+
+# --- build_vf (desqueeze + crop anti-vignettatura, NO downscale) -----------
+
+def test_build_vf_no_downscale():
+    vf = core.build_vf(1.2, 1.0)
     assert "scale=trunc(iw*1.2/2)*2:ih" in vf
-    assert "crop=" in vf
-    assert "scale=1920:1080" in vf
+    assert "crop=trunc(iw/1.0/2)*2:trunc(ih/1.0/2)*2" in vf
+    # nessun scale finale a risoluzione fissa
+    assert vf.count("scale=") == 1
 
 
 # --- gyroflow benign detection --------------------------------------------
@@ -82,9 +69,27 @@ def test_benign_patterns():
 # --- output_name -----------------------------------------------------------
 
 def test_output_name():
-    assert core.output_name(Path("GX010050.MP4"), 1920, 900) == (
-        "GX010050_anamorfico_1920x900.mp4"
+    assert core.output_name(Path("GX010050.MP4"), 3244, 1520) == (
+        "GX010050_anamorphic_3244x1520.mp4"
     )
+
+
+# --- format support (16:9 2.7K only) --------------------------------------
+
+def test_supported_only_16by9_2k7():
+    assert _info(2704, 1520).is_supported is True
+    assert _info(2704, 2028).is_supported is False  # 4:3
+    assert _info(1920, 1080).is_supported is False  # 16:9 ma non 2.7K
+
+
+def test_is_16by9():
+    assert _info(2704, 1520).is_16by9 is True
+    assert _info(2704, 2028).is_16by9 is False
+
+
+def test_validate_skips_4by3():
+    warns = metadata.validate(_info(2704, 2028))
+    assert any("not 16:9" in w.lower() or "skipped" in w.lower() for w in warns)
 
 
 # --- collect_files ---------------------------------------------------------
@@ -93,7 +98,6 @@ def test_collect_files_dedup_and_mixed(tmp_path):
     (tmp_path / "a.MP4").write_bytes(b"")
     (tmp_path / "b.mp4").write_bytes(b"")
     (tmp_path / "note.txt").write_bytes(b"")
-    # cartella + un file esplicito già incluso nella cartella -> nessun duplicato
     files = core.collect_files([tmp_path, tmp_path / "a.MP4"])
     names = sorted(p.name for p in files)
     assert names == ["a.MP4", "b.mp4"]

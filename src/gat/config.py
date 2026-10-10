@@ -55,7 +55,13 @@ def default_config_path() -> Path:
 
 @dataclass
 class Settings:
-    """Parametri della pipeline. ``auto`` = scelta in base al formato di input."""
+    """Parametri della pipeline.
+
+    Il tool tratta SOLO clip 2.7K 16:9: il desqueeze 1.2x produce il formato
+    cinematografico ~2.13:1 e l'export avviene a PIENA risoluzione (nessun
+    downscale a 1080p), con un encode H.265 di alta qualità. Non esiste più la
+    scelta di formato o di "qualità" bassa: i default sono già di alta qualità.
+    """
 
     # Stabilizzazione
     stabilize: bool = True
@@ -64,14 +70,12 @@ class Settings:
     gyroflow_codec: str = "H.264/AVC"
     gyroflow_bitrate: int = 100  # Mbps, output intermedio di Gyroflow
 
-    # Desqueeze / export
+    # Desqueeze / export (piena risoluzione, alta qualità)
     squeeze: float = 1.2
-    aspect: str = "auto"  # "auto" | "16:9" | "2.13:1" | "W:H" | float
-    width: int = 1920
     zoom: str = "auto"  # "auto" | float  (ritaglio anti-vignettatura)
-    crf: int = 22
-    preset: str = "medium"  # preset x265
-    audio_bitrate: str = "192k"
+    crf: int = 18  # H.265: più basso = qualità più alta (16-18 = alta qualità)
+    preset: str = "slow"  # preset x265 (qualità/efficienza; "slow" = alta qualità)
+    audio_bitrate: str = "256k"
 
     def merged(self, overrides: dict) -> "Settings":
         """Restituisce una copia con i valori non-None di ``overrides`` applicati."""

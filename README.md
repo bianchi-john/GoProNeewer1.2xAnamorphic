@@ -4,15 +4,24 @@ Strumento Linux per elaborare i clip di una **GoPro HERO11 Black** girati con
 una lente anamorfica **Neewer LS-56 1.2x** (non ufficiale) e produrre video
 pronti all'uso per la TV o il montaggio.
 
+Il tool tratta **un solo formato: clip 2.7K 16:9** (2704×1520). Il profilo lente
+calibrato è valido solo per questo formato; i file non conformi (es. 4:3) vengono
+**segnalati e saltati**, non elaborati.
+
 La pipeline fa tre cose:
 
 1. **Stabilizzazione** opzionale con **Gyroflow**, usando i dati grezzi del
    giroscopio (traccia GPMF) e un **profilo lente calibrato** dall'utente —
    non la stabilizzazione interna della GoPro (HyperSmooth), che con la lente
    non ufficiale produce ondeggiamenti.
-2. **Desqueeze** anamorfico (fattore 1.2x orizzontale).
-3. **Export** leggero in H.265 (default 1080p, `tag:v hvc1` per compatibilità
-   Apple/TV).
+2. **Desqueeze** anamorfico 1.2x → formato cinematografico ~2.13:1.
+3. **Export** a **piena risoluzione** (~3244×1520, nessun downscale) in H.265 di
+   alta qualità (CRF 18, preset slow, `tag:v hvc1` per compatibilità Apple/TV).
+
+> **Nota onesta sulla qualità:** il desqueeze e la stabilizzazione *ricampionano*
+> l'immagine, quindi l'output è *near-original* (qualità molto alta a piena
+> risoluzione) ma non bit-identico alla sorgente. Il CRF basso evita di
+> aggiungere perdite percepibili sopra al ricampionamento.
 
 > Sviluppo per fasi, tutte complete: **Fase 1 (core CLI)**, **Fase 2 (GUI
 > PySide6)** e **Fase 3 (packaging AppImage)**.
@@ -54,7 +63,7 @@ che aggiunge il comando `gat-gui`.
 
 Verificato sul campo:
 
-- Risoluzione **2.7K**: `2704x1520` (16:9) o `2704x2028` (4:3).
+- Risoluzione **2.7K 16:9**: `2704x1520` (unico formato supportato).
 - Lente **Wide** (la distorsione fisheye viene corretta da Gyroflow col profilo).
 - **HyperSmooth SPENTO**.
 - Usa **sempre i file ORIGINALI** dalla scheda SD: i dati giroscopio (GPMF) si
@@ -66,22 +75,21 @@ Verificato sul campo:
 gat-gui
 ```
 
-Interfaccia minimale: scegli una cartella (o trascina file .MP4), controlla i
-metadati rilevati e gli avvisi nella tabella, seleziona formato e qualità,
-spunta *Stabilizza con Gyroflow*, indica la cartella di output e premi **Avvia**.
-Barra di avanzamento e log integrati.
+Interfaccia minimale in inglese con tema scuro: aggiungi una cartella (o trascina
+file .MP4), controlla stato e avvisi nella tabella (i file non 16:9 sono marcati
+*Skip*), usa il grande **toggle Stabilize** (ON/OFF, usa Gyroflow + profilo lente
+quando acceso), scegli la cartella di output e premi **Start**. Le impostazioni
+avanzate (percorso Gyroflow, CRF, preset x265) sono in una sezione *Advanced
+options* nascosta di default. Barra di avanzamento e log integrati.
 
 ## Uso — CLI
 
 ```bash
-# Stabilizza + desqueeze, formato scelto automaticamente in base all'input
+# Stabilizza + desqueeze a piena risoluzione (default di alta qualità)
 gat /percorso/clip_originali /percorso/output
 
 # Solo desqueeze (niente Gyroflow)
 gat input/ output/ --no-stabilize
-
-# Forza il formato cinema 2.13:1 a 1920 px di larghezza
-gat input/ output/ --aspect 2.13:1 --width 1920
 
 # Indica un Gyroflow e un profilo lente specifici
 gat input/ output/ --gyroflow ~/Applications/Gyroflow.AppImage --calibration mio_profilo.json
@@ -90,26 +98,24 @@ gat input/ output/ --gyroflow ~/Applications/Gyroflow.AppImage --calibration mio
 gat input/ --probe
 ```
 
-### Formati di output
+### Output
 
-| Input                | `--aspect auto` produce | Risultato      |
-|----------------------|-------------------------|----------------|
-| 4:3 (2704x2028)      | 16:9                    | 1920x1080 (TV) |
-| 16:9 (2704x1520)     | 2.13:1 (cinema)         | 1920x900 ca.   |
+Un solo formato in ingresso (**2.7K 16:9**, 2704×1520) → desqueeze 1.2x →
+**~3244×1520** a piena risoluzione (cinema ~2.13:1). I file 4:3 o con
+risoluzione diversa vengono segnalati e saltati.
 
-Tutto è parametrizzabile: `--aspect`, `--width`, `--squeeze`, `--crf`,
-`--preset`, `--zoom`.
+Parametri avanzati (già impostati su valori di alta qualità):
+`--crf` (default 18), `--preset` (default slow), `--squeeze` (1.2), `--zoom`.
 
 - **`--zoom auto`** (default): con stabilizzazione = 1.0 (Gyroflow ritaglia già
-  i bordi); senza stabilizzazione applica un crop anti-vignettatura (~1.3x in
-  4:3, ~1.2x in 16:9).
+  i bordi); senza stabilizzazione applica un crop anti-vignettatura ~1.2x.
 
 ### Configurazione
 
 I default si possono salvare in `~/.config/gat/config.json`:
 
 ```bash
-gat input/ output/ --crf 20 --width 2560 --save-config   # salva ed esce
+gat input/ output/ --crf 16 --preset slower --save-config   # salva ed esce
 ```
 
 Le opzioni da riga di comando hanno sempre la priorità sul file di config.
